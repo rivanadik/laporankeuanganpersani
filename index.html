@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="id" class="h-full">
+ <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laporan Keuangan Persani</title>
+  
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.0/dist/umd/lucide.min.js"></script>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=DM+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Plus Jakarta Sans', 'sans-serif'], mono: ['DM Mono', 'monospace'] },
+          colors: { navy: { 50:'#f0f4ff', 100:'#dbe4ff', 200:'#b6c9ff', 300:'#8aa8ff', 400:'#5c82fc', 500:'#3561f0', 600:'#1e44d2', 700:'#1634a8', 800:'#142c85', 900:'#0f1f5c' } }
+        }
+      }
+    }
+  </script>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    .app-shell { height: 100%; overflow: auto; }
+    [data-lucide] { display: inline-block; }
+    .fade-in { animation: fadeIn 0.4s ease; }
+    @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+    .card-hover { transition: all 0.2s ease; }
+    .card-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.08); }
+    .toast-show { animation: toastIn 0.3s ease, toastOut 0.3s ease 2.7s; }
+    @keyframes toastIn { from { opacity:0; transform:translateY(-20px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes toastOut { from { opacity:1; } to { opacity:0; } }
+    
+    .formal-table { width: 100%; border-collapse: collapse; background: white; border: 1.5px solid #000; }
+    .formal-table th, .formal-table td { border: 1px solid #000; padding: 4px 6px; color: #000; font-size: 11px; }
+    .formal-table th { background-color: transparent; font-weight: normal; text-align: left; }
+    .formal-title { font-size: 13px; font-weight: bold; text-align: center; text-transform: uppercase; color: #000; margin-bottom: 16px; }
+    
+    .sidebar-link { transition: all 0.15s ease; }
+    .sidebar-link:hover { background: rgba(255,255,255,0.1); }
+    .sidebar-link.active { background: rgba(255,255,255,0.15); border-left: 3px solid #8aa8ff; }
+    .table-row { transition: background 0.1s ease; }
+    .table-row:hover { background: #f8fafc; }
+    .mobile-menu { transform: translateX(-100%); transition: transform 0.3s ease; }
+    .mobile-menu.open { transform: translateX(0); }
+  </style>
+ </head>
+ <body class="h-full bg-slate-50 font-sans text-slate-800">
+  
+  <div id="toast-container" class="fixed top-4 right-4 z-[300] flex flex-col gap-2"></div>
+
+  <div id="login-page" class="fixed inset-0 bg-slate-100 z-[200] flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl p-8 shadow-xl max-w-sm w-full border border-slate-200">
+        <div class="w-16 h-16 rounded-2xl bg-navy-50 flex items-center justify-center mx-auto mb-4"><span class="text-3xl">🤸</span></div>
+        <h2 class="text-2xl font-bold text-center text-slate-900 mb-1">Sistem Keuangan</h2>
+        <p class="text-center text-sm text-slate-500 mb-8">Persani Kota Malang</p>
+        <form onsubmit="handleLogin(event)" class="space-y-4">
+            <div><label class="block text-sm font-medium text-slate-700 mb-1">Email</label><input type="email" id="login-email" required class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500"></div>
+            <div><label class="block text-sm font-medium text-slate-700 mb-1">Password</label><input type="password" id="login-password" required class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-navy-500"></div>
+            <button type="submit" id="login-btn" class="w-full bg-navy-600 hover:bg-navy-700 text-white font-bold py-3 rounded-xl transition-colors mt-2">Masuk Aplikasi</button>
+        </form>
+    </div>
+  </div>
+
+  <div class="app-shell flex flex-col lg:flex-row hidden" id="app">
+   <header class="lg:hidden no-print bg-navy-800 text-white p-4 flex items-center justify-between sticky top-0 z-50">
+    <button onclick="toggleMobileMenu()" class="p-1"><i data-lucide="menu" class="w-6 h-6"></i></button>
+    <h1 class="text-lg font-bold">Persani Kota Malang</h1>
+    <div class="w-6"></div>
+   </header>
+   
+   <div id="mobile-overlay" class="lg:hidden fixed inset-0 bg-black/50 z-50 hidden" onclick="toggleMobileMenu()"></div>
+   
+   <aside id="sidebar" class="mobile-menu lg:transform-none fixed lg:sticky top-0 left-0 h-full z-50 lg:z-auto w-64 bg-navy-800 text-white flex flex-col no-print">
+    <div class="p-6 border-b border-white/10">
+     <div class="flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-navy-400/30 flex items-center justify-center"><span class="text-xl">🤸</span></div>
+      <div><h1 class="font-bold text-sm leading-tight">Persani Kota Malang</h1><p class="text-[11px] text-navy-300 mt-0.5">Sistem Keuangan</p></div>
+     </div>
+    </div>
+    <nav class="flex-1 p-4 space-y-1">
+     <button onclick="navigate('dashboard')" data-nav="dashboard" class="sidebar-link active w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/90"> <i data-lucide="layout-dashboard" class="w-[18px] h-[18px]"></i> Dashboard </button> 
+     <button onclick="navigate('income')" data-nav="income" class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70"> <i data-lucide="trending-up" class="w-[18px] h-[18px]"></i> Pemasukan </button> 
+     <button onclick="navigate('expense')" data-nav="expense" class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70"> <i data-lucide="trending-down" class="w-[18px] h-[18px]"></i> Pengeluaran </button> 
+     <button onclick="navigate('bank')" data-nav="bank" class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70"> <i data-lucide="landmark" class="w-[18px] h-[18px]"></i> Rincian Bank </button> 
+     <button onclick="navigate('report')" data-nav="report" class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70"> <i data-lucide="file-text" class="w-[18px] h-[18px]"></i> Laporan Cetak </button> 
+     <button onclick="navigate('settings')" data-nav="settings" class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70"> <i data-lucide="settings" class="w-[18px] h-[18px]"></i> Pengaturan </button>
+    </nav>
+    <div class="p-4 border-t border-white/10 flex items-center justify-between">
+     <div class="flex items-center gap-3 px-3 py-2">
+      <div class="w-8 h-8 rounded-full bg-navy-400/30 flex items-center justify-center text-xs font-bold">B</div>
+      <div><p class="text-xs font-semibold">Bendahara</p><p class="text-[10px] text-navy-300">Administrator</p></div>
+     </div>
+     <button onclick="handleLogout()" class="p-2 text-rose-400 hover:text-rose-500 rounded-lg transition-colors"><i data-lucide="log-out" class="w-5 h-5"></i></button>
+    </div>
+   </aside>
+   
+   <main class="flex-1 min-w-0 p-4 md:p-6 lg:p-8">
+    <section id="page-dashboard" class="page fade-in">
+     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div><h2 class="text-2xl font-bold text-slate-900">Dashboard</h2><p class="text-sm text-slate-500 mt-1">Ringkasan tersinkronisasi (Transaksi + Bank)</p></div>
+      <div class="flex items-center gap-2">
+       <select id="filter-month" onchange="applyFilters()" class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-navy-400"> <option value="all">Semua Bulan</option> <option value="0">Januari</option><option value="1">Februari</option><option value="2">Maret</option><option value="3">April</option><option value="4">Mei</option><option value="5">Juni</option><option value="6">Juli</option><option value="7">Agustus</option><option value="8">September</option><option value="9">Oktober</option><option value="10">November</option><option value="11">Desember</option></select> 
+       <select id="filter-year" onchange="applyFilters()" class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-navy-400"> <option value="all">Semua Tahun</option> </select>
+      </div>
+     </div>
+     
+     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+      <div class="card-hover bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+       <div class="flex items-center justify-between mb-3"><span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Saldo Kas Akhir</span><div class="w-9 h-9 rounded-xl bg-emerald-50 flex items-center justify-center"><i data-lucide="wallet" class="w-[18px] h-[18px] text-emerald-500"></i></div></div>
+       <p class="text-2xl font-bold font-mono" id="card-balance">Rp 0</p>
+       <p class="text-xs text-slate-400 mt-1">Saldo Riil (Mutasi + Bunga - Pajak - Adm)</p>
+      </div>
+      <div class="card-hover bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+       <div class="flex items-center justify-between mb-3"><span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Pemasukan</span><div class="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center"><i data-lucide="arrow-up-right" class="w-[18px] h-[18px] text-blue-500"></i></div></div>
+       <p class="text-2xl font-bold font-mono text-blue-600" id="card-income">Rp 0</p>
+      </div>
+      <div class="card-hover bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+       <div class="flex items-center justify-between mb-3"><span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Pengeluaran</span><div class="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center"><i data-lucide="arrow-down-right" class="w-[18px] h-[18px] text-rose-500"></i></div></div>
+       <p class="text-2xl font-bold font-mono text-rose-500" id="card-expense">Rp 0</p>
+      </div>
+     </div>
+     
+     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-8">
+      <div class="lg:col-span-2 bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+       <h3 class="font-semibold text-slate-700 mb-4">Pemasukan vs Pengeluaran (Grafik Sinkron Bank)</h3>
+       <div class="relative" style="height:240px"><canvas id="chart-bar" class="w-full" style="height:240px"></canvas></div>
+      </div>
+      <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+       <h3 class="font-semibold text-slate-700 mb-4">Kategori Pemasukan</h3>
+       <div class="relative flex items-center justify-center" style="height:240px"><canvas id="chart-pie" width="220" height="220"></canvas></div>
+      </div>
+     </div>
+     
+     <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div class="p-5 border-b border-slate-100 flex items-center justify-between"><h3 class="font-semibold text-slate-700">Transaksi Terakhir</h3></div>
+      <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="border-b border-slate-100 text-left text-xs font-semibold text-slate-400 uppercase tracking-wider"><th class="px-5 py-3">Tanggal</th><th class="px-5 py-3">Deskripsi</th><th class="px-5 py-3">Kategori</th><th class="px-5 py-3 text-right">Jumlah</th><th class="px-5 py-3 text-center">Aksi</th></tr></thead><tbody id="recent-tbody"></tbody></table></div>
+      <div id="pagination-controls" class="p-4 border-t border-slate-100 flex items-center justify-between text-sm text-slate-500"></div>
+     </div>
+    </section>
+
+    <section id="page-income" class="page fade-in hidden">
+     <div class="mb-6"><h2 class="text-2xl font-bold text-slate-900">Tambah Pemasukan</h2></div>
+     <div class="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm max-w-2xl">
+      <form id="income-form" onsubmit="handleIncomeSubmit(event)" class="space-y-4">
+       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Tanggal</label><input type="date" id="inc-date" required class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Kategori</label><select id="inc-category" required class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white"></select></div>
+       </div>
+       <div><label class="block text-sm font-medium text-slate-600 mb-1">Nama / Uraian</label><input type="text" id="inc-name" required placeholder="Nama siswa" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"></div>
+       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Bulan Pembayaran</label><select id="inc-month" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white"><option value="">-</option><option>Januari</option><option>Februari</option><option>Maret</option><option>April</option><option>Mei</option><option>Juni</option><option>Juli</option><option>Agustus</option><option>September</option><option>Oktober</option><option>November</option><option>Desember</option></select></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Jumlah (Rp)</label><input type="number" id="inc-amount" required placeholder="100000" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono"></div>
+       </div>
+       <div class="pt-2"><button type="submit" id="inc-submit-btn" class="bg-navy-600 text-white font-semibold px-6 py-2.5 rounded-xl text-sm flex items-center gap-2"><i data-lucide="plus" class="w-4 h-4"></i> Simpan Pemasukan</button></div>
+      </form>
+     </div>
+    </section>
+
+    <section id="page-expense" class="page fade-in hidden">
+     <div class="mb-6"><h2 class="text-2xl font-bold text-slate-900">Tambah Pengeluaran</h2></div>
+     <div class="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm max-w-2xl">
+      <form id="expense-form" onsubmit="handleExpenseSubmit(event)" class="space-y-4">
+       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Tanggal</label><input type="date" id="exp-date" required class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Jumlah (Rp)</label><input type="number" id="exp-amount" required placeholder="50000" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono"></div>
+       </div>
+       <div><label class="block text-sm font-medium text-slate-600 mb-1">Uraian / Deskripsi</label><input type="text" id="exp-desc" required placeholder="Contoh: Bayar Listrik" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"></div>
+       <div><label class="block text-sm font-medium text-slate-600 mb-1">Kategori</label><select id="exp-category" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white"></select></div>
+       <div class="pt-2"><button type="submit" id="exp-submit-btn" class="bg-rose-500 text-white font-semibold px-6 py-2.5 rounded-xl text-sm flex items-center gap-2"><i data-lucide="minus" class="w-4 h-4"></i> Simpan Pengeluaran</button></div>
+      </form>
+     </div>
+    </section>
+
+    <section id="page-bank" class="page fade-in hidden">
+     <div class="mb-6"><h2 class="text-2xl font-bold text-slate-900">Rincian Bank BCA</h2><p class="text-sm text-slate-500 mt-1">Sinkronisasi data Bunga dan Admin per bulan (Bisa pilih tahun depan)</p></div>
+     <div class="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm max-w-2xl">
+      <form id="bank-form" onsubmit="handleBankSubmit(event)" class="space-y-6">
+       <div class="flex items-center gap-4 border-b border-slate-100 pb-4">
+        <div class="flex-1"><label class="block text-sm font-medium text-slate-600 mb-1">Bulan</label><select id="bank-month" onchange="loadBankForm()" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white"><option>Januari</option><option>Februari</option><option>Maret</option><option>April</option><option>Mei</option><option>Juni</option><option>Juli</option><option>Agustus</option><option>September</option><option>Oktober</option><option>November</option><option>Desember</option></select></div>
+        <div class="flex-1"><label class="block text-sm font-medium text-slate-600 mb-1">Tahun</label><select id="bank-year" onchange="loadBankForm()" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm bg-white"></select></div>
+       </div>
+       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Bunga Bank (Rp)</label><input type="number" id="bank-bunga" required min="0" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono"></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Pajak (Rp)</label><input type="number" id="bank-pajak" required min="0" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono"></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Adm Bank (Rp)</label><input type="number" id="bank-adm-bank" required min="0" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono"></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Adm Transfer (Rp)</label><input type="number" id="bank-adm-transfer" required min="0" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono"></div>
+       </div>
+       <div class="pt-2"><button type="submit" id="bank-submit-btn" class="bg-navy-600 text-white font-semibold px-6 py-2.5 rounded-xl text-sm flex items-center gap-2"><i data-lucide="save" class="w-4 h-4"></i> Simpan Data Bank</button></div>
+      </form>
+     </div>
+    </section>
+
+    <section id="page-report" class="page fade-in hidden">
+     <div class="flex flex-col gap-4 mb-6 no-print">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div><h2 class="text-2xl font-bold text-slate-900">Cetak Laporan</h2><p class="text-sm text-slate-500 mt-1">Laporan sinkron otomatis dengan data Bank</p></div>
+        <div class="flex items-center gap-2">
+         <select id="report-month" onchange="generateReport()" class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-navy-400"> <option value="all">Semua Bulan</option> <option>Januari</option><option>Februari</option><option>Maret</option><option>April</option><option>Mei</option><option>Juni</option><option>Juli</option><option>Agustus</option><option>September</option><option>Oktober</option><option>November</option><option>Desember</option> </select> 
+         <select id="report-year" onchange="generateReport()" class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-navy-400"></select> 
+         <button onclick="downloadPDF()" id="btn-download-pdf" class="bg-emerald-600 text-white font-semibold px-4 py-2 rounded-xl text-sm flex items-center gap-2"> <i data-lucide="download" class="w-4 h-4"></i> Download PDF </button>
+        </div>
+      </div>
+     </div>
+     <div id="report-content" class="bg-white mx-auto flex flex-col" style="width: 297mm; min-height: 210mm; padding: 12mm 15mm; box-sizing: border-box; overflow: hidden;">
+      <div class="formal-title" id="report-title-display">LAPORAN KEUANGAN PERSANI MALANG TANGGAL <span id="report-period-display">...</span></div>
+      <div style="display: flex; gap: 8px; width: 100%; margin-bottom: 16px; flex-grow: 1;">
+        <div style="width: 50%;">
+            <table class="formal-table"><thead><tr><th width="18%">TANGGAL</th><th width="57%">PENERIMAAN KAS</th><th width="25%">JUMLAH</th></tr></thead><tbody id="rpt-income-tbody"></tbody><tfoot><tr><td colspan="2">Jumlah Penerimaan Kas</td><td style="text-align: right;" id="rpt-income-total">0,00</td></tr></tfoot></table>
+        </div>
+        <div style="width: 50%;">
+            <table class="formal-table"><thead><tr><th width="18%">TANGGAL</th><th width="57%">PENGELUARAN KAS</th><th width="25%">JUMLAH</th></tr></thead><tbody id="rpt-expense-tbody"></tbody><tfoot><tr><td colspan="2">Jumlah Pengeluaran Kas</td><td style="text-align: right;" id="rpt-expense-total">0,00</td></tr></tfoot></table>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; justify-content: flex-end; width: 100%; margin-top: auto;">
+        <div style="width: 40%; padding-left: 5px; margin-bottom: 20px;">
+          <p style="text-align: left; font-size: 11px; margin-bottom: 4px; text-decoration: underline;">RINCIAN BANK BCA</p>
+          <table class="formal-table">
+           <tbody>
+            <tr><td style="width: 55%;">Saldo belum pajak dan adm</td><td style="width: 35%; text-align: right;" id="rpt-saldo-awal">0,00</td><td style="width: 10%; border-left: none; text-align: center;"></td></tr>
+            <tr><td>Bunga</td><td style="text-align: right;" id="rpt-bunga">0,00</td><td style="border-left: none; text-align: center;">+</td></tr>
+            <tr><td></td><td style="text-align: right; border-top: 1.5px solid #000;" id="rpt-subtotal">0,00</td><td style="border-left: none;"></td></tr>
+            <tr><td>Pajak</td><td style="text-align: right;" id="rpt-pajak">0,00</td><td></td></tr>
+            <tr><td>Biaya Adm Bank</td><td style="text-align: right;" id="rpt-adm-bank">0,00</td><td></td></tr>
+            <tr><td>Biaya Adm Transfer</td><td style="text-align: right;" id="rpt-adm-transfer">0,00</td><td style="border-left: none; text-align: center;">-</td></tr>
+            <tr><td>Saldo Kas <span id="rpt-summary-date-display"></span></td><td style="text-align: right;" id="rpt-saldo-akhir">0,00</td><td></td></tr>
+           </tbody>
+          </table>
+        </div>
+        <div style="display: flex; justify-content: space-between; padding: 0 50px;">
+            <div style="text-align: left;"><p style="font-size: 11px; margin-bottom: 60px;">Ketua Persani Malang</p><p style="font-size: 11px; text-decoration: underline;" id="sig-ketua">Firmansyah</p></div>
+            <div style="text-align: right;"><p style="font-size: 11px; margin-bottom: 4px;">Malang, <span id="sig-date"></span></p><p style="font-size: 11px; margin-bottom: 45px;">Bendahara</p><p style="font-size: 11px; text-decoration: underline;" id="sig-bendahara">Jeisen Christin</p></div>
+        </div>
+      </div>
+     </div>
+    </section>
+
+    <section id="page-settings" class="page fade-in hidden">
+     <div class="mb-6"><h2 class="text-2xl font-bold text-slate-900">Pengaturan</h2></div>
+     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+       <h3 class="font-bold text-slate-900 mb-4 flex items-center gap-2"><i data-lucide="building-2" class="w-5 h-5 text-navy-600"></i> Informasi Organisasi</h3>
+       <div class="space-y-4">
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Nama Organisasi</label><input type="text" id="set-org-name" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Nama Ketua</label><input type="text" id="set-ketua-name" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Nama Bendahara</label><input type="text" id="set-bendahara-name" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"></div>
+        <button onclick="saveOrgSettings()" class="w-full bg-navy-600 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">Simpan Informasi</button>
+       </div>
+      </div>
+      <div class="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm">
+       <h3 class="font-bold text-slate-900 mb-4 flex items-center gap-2"><i data-lucide="tag" class="w-5 h-5 text-navy-600"></i> Kategori</h3>
+       <div class="space-y-4">
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Kategori Pemasukan</label><textarea id="set-income-categories" rows="3" placeholder="Pisahkan dengan koma" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"></textarea></div>
+        <div><label class="block text-sm font-medium text-slate-600 mb-1">Kategori Pengeluaran</label><textarea id="set-expense-categories" rows="3" placeholder="Pisahkan dengan koma" class="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm"></textarea></div>
+        <button onclick="saveCategorySettings()" class="w-full bg-navy-600 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors">Simpan Kategori</button>
+       </div>
+      </div>
+     </div>
+    </section>
+   </main>
+
+   <div id="delete-modal" class="fixed inset-0 bg-black/40 z-[90] hidden flex items-center justify-center p-4">
+    <div class="delete-confirm bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+     <div class="flex items-center gap-3 mb-4"><div class="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center"><i data-lucide="alert-triangle" class="w-5 h-5 text-rose-500"></i></div><h3 class="font-bold text-slate-900">Hapus Transaksi?</h3></div>
+     <div class="flex gap-3 justify-end"><button onclick="closeDeleteModal()" class="px-4 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg">Batal</button><button onclick="confirmDelete()" id="confirm-delete-btn" class="px-4 py-2 text-sm text-white bg-rose-500 rounded-lg">Hapus</button></div>
+    </div>
+   </div>
+  </div>
+  
+  <script>
+// FIREBASE CONFIG
+const firebaseConfig = {
+  apiKey: "AIzaSyCT3XnsxtkTD0ZTWzNPlJ4x3JH_RGSw7gk",
+  authDomain: "persanikeuangan.firebaseapp.com",
+  projectId: "persanikeuangan",
+  storageBucket: "persanikeuangan.firebasestorage.app",
+  messagingSenderId: "1044923327785",
+  appId: "1:1044923327785:web:b1baae47d6acd4d0c68338",
+  measurementId: "G-MPT93ZKE03"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+
+let allData = []; let bankData = {}; let currentPage = 'dashboard'; let tablePage = 1; const PAGE_SIZE = 10; let isInitialized = false;
+
+// LOGIN & AUTH
+auth.onAuthStateChanged(async (user) => {
+  if (user) {
+    document.getElementById('login-page').classList.add('hidden');
+    document.getElementById('app').classList.remove('hidden');
+    if (!isInitialized) {
+       await window.dataSdk.init(dataHandler); 
+       document.getElementById('inc-date').value = todayStr(); 
+       document.getElementById('exp-date').value = todayStr(); 
+       const mNames = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+       const curM = mNames[new Date().getMonth()];
+       document.getElementById('bank-month').value = curM;
+       document.getElementById('report-month').value = curM;
+       document.getElementById('filter-month').value = new Date().getMonth();
+       populateYears(); lucide.createIcons(); isInitialized = true;
+    }
+  } else {
+    document.getElementById('login-page').classList.remove('hidden');
+    document.getElementById('app').classList.add('hidden');
+  }
+});
+
+async function handleLogin(e) { e.preventDefault(); try { await auth.signInWithEmailAndPassword(document.getElementById('login-email').value, document.getElementById('login-password').value); } catch(error) { alert('Login Gagal'); } }
+function handleLogout() { if(confirm("Keluar?")) auth.signOut(); }
+
+// DATA SDK
+window.dataSdk = {
+  init: async (handler) => {
+    db.collection("transaksi_persani").orderBy("created_at", "desc").onSnapshot((snapshot) => {
+      allData = snapshot.docs.map(doc => ({ __backendId: doc.id, ...doc.data() }));
+      handler.onDataChanged(allData);
+    });
+    db.collection("bank_persani").onSnapshot((snapshot) => {
+      bankData = {}; snapshot.forEach(doc => bankData[doc.id] = doc.data());
+      if (currentPage === 'dashboard') renderDashboard();
+      if (currentPage === 'report') generateReport();
+      if (currentPage === 'bank') loadBankForm();
+    });
+    return { isOk: true };
+  },
+  create: async (data) => { try { await db.collection("transaksi_persani").add(data); return { isOk: true }; } catch(e){ return {isOk:false}; } },
+  delete: async (rec) => { try { await db.collection("transaksi_persani").doc(rec.__backendId).delete(); return { isOk: true }; } catch(e){ return {isOk:false}; } }
+};
+
+// HELPERS
+function formatRpUI(n) { return Number(n || 0).toLocaleString('id-ID'); }
+function formatRpResmi(n) { return Number(n || 0).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function formatReportDate(d) { if (!d) return '-'; const dt = new Date(d); const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des']; return `${String(dt.getDate()).padStart(2,'0')}-${months[dt.getMonth()]}-${String(dt.getFullYear()).slice(-2)}`; }
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+function showToast(msg, type='success') { const c = document.getElementById('toast-container'); const t = document.createElement('div'); t.className = `toast-show px-4 py-3 rounded-xl text-sm shadow-lg ${type==='success' ? 'bg-emerald-600' : 'bg-rose-500'} text-white`; t.textContent = msg; c.appendChild(t); setTimeout(() => t.remove(), 3000); }
+
+// NAVIGATION
+function navigate(page) {
+  currentPage = page; document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+  document.getElementById('page-' + page).classList.remove('hidden');
+  document.querySelectorAll('[data-nav]').forEach(btn => btn.classList.toggle('active', btn.dataset.nav === page));
+  if (page === 'dashboard') renderDashboard(); if (page === 'report') generateReport(); if (page === 'settings') loadSettingsPage();
+  if (page === 'income' || page === 'expense') populateCategorySelects();
+  toggleMobileMenu(true);
+}
+function toggleMobileMenu(force) { const s = document.getElementById('sidebar'); const o = document.getElementById('mobile-overlay'); if(force || s.classList.contains('open')){ s.classList.remove('open'); o.classList.add('hidden'); } else { s.classList.add('open'); o.classList.remove('hidden'); } }
+
+// YEAR DROPDOWN DYNAMIC (FUTURE PROOF)
+function populateYears() {
+  const ySet = new Set();
+  allData.forEach(d => { if (d.date) ySet.add(new Date(d.date).getFullYear()); });
+  const currentY = new Date().getFullYear();
+  ySet.add(currentY);
+  ySet.add(currentY + 1); // Tambahkan tahun depan otomatis
+  ySet.add(currentY + 2); // Tambahkan 2 tahun ke depan otomatis
+  const yrs = [...ySet].sort();
+
+  const fill = (id, hasAll) => {
+    const el = document.getElementById(id); if(!el) return;
+    const oldVal = el.value;
+    el.innerHTML = (hasAll ? '<option value="all">Semua Tahun</option>' : '') + yrs.map(y=>`<option value="${y}">${y}</option>`).join('');
+    el.value = oldVal || currentY;
+  };
+  fill('filter-year', true); fill('bank-year', false); fill('report-year', false);
+}
+
+// DASHBOARD & CHART LOGIC
+const dataHandler = { onDataChanged() { populateYears(); renderDashboard(); if (currentPage === 'report') generateReport(); } };
+
+function renderDashboard() {
+  populateFilterOptions(); const data = getFilteredData();
+  const incArr = data.filter(d => d.type === 'income'); const expArr = data.filter(d => d.type === 'expense');
+  const tIn = incArr.reduce((s, d) => s + d.amount, 0); const tOut = expArr.reduce((s, d) => s + d.amount, 0);
+
+  let b=0, p=0, ab=0, at=0;
+  const m = document.getElementById('filter-month').value; const y = document.getElementById('filter-year').value;
+  const mNames = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  if(m !== 'all' && y !== 'all'){ const dId = `${y}-${mNames[m]}`; if(bankData[dId]){ b=bankData[dId].bunga; p=bankData[dId].pajak; ab=bankData[dId].admBank; at=bankData[dId].admTransfer; } }
+  else { Object.values(bankData).forEach(v => { b+=v.bunga; p+=v.pajak; ab+=v.admBank; at+=v.admTransfer; }); }
+
+  document.getElementById('card-balance').textContent = 'Rp ' + formatRpUI(tIn - tOut + b - p - ab - at);
+  document.getElementById('card-income').textContent = 'Rp ' + formatRpUI(tIn);
+  document.getElementById('card-expense').textContent = 'Rp ' + formatRpUI(tOut);
+  drawBarChart(data); drawPieChart(incArr); renderRecentTransactions();
+}
+
+function drawBarChart(data) {
+  const canvas = document.getElementById('chart-bar'); if(!canvas) return; const ctx = canvas.getContext('2d');
+  canvas.width = canvas.parentElement.clientWidth; canvas.height = 240; ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const mShort = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const mFull = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  const incM = new Array(12).fill(0); const expM = new Array(12).fill(0);
+  data.forEach(d => { if(!d.date) return; const mi = new Date(d.date).getMonth(); if(d.type==='income') incM[mi]+=d.amount; else expM[mi]+=d.amount; });
+  
+  const selY = document.getElementById('filter-year').value;
+  const viewY = selY === 'all' ? new Date().getFullYear() : parseInt(selY);
+  mFull.forEach((mn, i) => { const dId = `${viewY}-${mn}`; if(bankData[dId]){ incM[i]+=bankData[dId].bunga; expM[i]+=(bankData[dId].pajak+bankData[dId].admBank+bankData[dId].admTransfer); } });
+
+  const maxV = Math.max(...incM, ...expM, 100000); const chartH = 180, chartY = 20, chartX = 50; const barW = (canvas.width - chartX - 20) / 12;
+  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const y = chartY + (chartH/4)*i; ctx.beginPath(); ctx.moveTo(chartX, y); ctx.lineTo(canvas.width-10, y); ctx.stroke(); ctx.fillStyle='#94a3b8'; ctx.font='10px DM Mono'; ctx.textAlign='right'; ctx.fillText(Math.round((maxV-(maxV/4)*i)/1000)+'k', chartX-6, y+3); }
+  mShort.forEach((m, i) => {
+    const x = chartX + i*barW; const bw = barW * 0.35;
+    ctx.fillStyle = '#3561f0'; ctx.fillRect(x + barW*0.1, chartY + chartH - ((incM[i]/maxV)*chartH), bw, (incM[i]/maxV)*chartH);
+    ctx.fillStyle = '#e11d48'; ctx.fillRect(x + barW*0.1 + bw + 2, chartY + chartH - ((expM[i]/maxV)*chartH), bw, (expM[i]/maxV)*chartH);
+    ctx.fillStyle = '#64748b'; ctx.font = '10px Plus Jakarta Sans'; ctx.textAlign = 'center'; ctx.fillText(m, x + barW/2, chartY + chartH + 16);
+  });
+}
+
+function loadBankForm() {
+  const dId = `${document.getElementById('bank-year').value}-${document.getElementById('bank-month').value}`;
+  const d = bankData[dId] || { bunga:0, pajak:0, admBank:0, admTransfer:0 };
+  document.getElementById('bank-bunga').value = d.bunga; document.getElementById('bank-pajak').value = d.pajak;
+  document.getElementById('bank-adm-bank').value = d.admBank; document.getElementById('bank-adm-transfer').value = d.admTransfer;
+}
+async function handleBankSubmit(e) { e.preventDefault(); const dId = `${document.getElementById('bank-year').value}-${document.getElementById('bank-month').value}`; await db.collection("bank_persani").doc(dId).set({ bunga:parseFloat(document.getElementById('bank-bunga').value)||0, pajak:parseFloat(document.getElementById('bank-pajak').value)||0, admBank:parseFloat(document.getElementById('bank-adm-bank').value)||0, admTransfer:parseFloat(document.getElementById('bank-adm-transfer').value)||0 }); showToast('Data Bank Disimpan'); }
+
+function generateReport() {
+  const m = document.getElementById('report-month').value; const y = document.getElementById('report-year').value;
+  const cfg = window.elementSdk?.config || defaultConfig;
+  const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  let filtered = allData; let lastD = 31;
+  if (m !== 'all') { lastD = new Date(y, months.indexOf(m)+1, 0).getDate(); filtered = allData.filter(d => d.date && months[new Date(d.date).getMonth()]==m && new Date(d.date).getFullYear()==y); }
+  const inc = filtered.filter(d => d.type === 'income').sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const exp = filtered.filter(d => d.type === 'expense').sort((a,b)=>new Date(a.date)-new Date(b.date));
+  const tIn = inc.reduce((s,d)=>s+d.amount,0); const tOut = exp.reduce((s,d)=>s+d.amount,0);
+  let b=0, p=0, ab=0, at=0;
+  if(m !== 'all'){ const dId = `${y}-${m}`; if(bankData[dId]){ b=bankData[dId].bunga; p=bankData[dId].pajak; ab=bankData[dId].admBank; at=bankData[dId].admTransfer; } }
+  document.getElementById('report-period-display').textContent = (m!=='all') ? `01 - ${lastD} ${m.toUpperCase()} ${y}` : 'SEMUA PERIODE';
+  document.getElementById('rpt-income-tbody').innerHTML = inc.map(d=>`<tr><td style="text-align:center">${formatReportDate(d.date)}</td><td>${d.name}</td><td style="text-align:right">${formatRpResmi(d.amount)}</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center">Kosong</td></tr>';
+  document.getElementById('rpt-expense-tbody').innerHTML = exp.map(d=>`<tr><td style="text-align:center">${formatReportDate(d.date)}</td><td>${d.description}</td><td style="text-align:right">${formatRpResmi(d.amount)}</td></tr>`).join('') || '<tr><td colspan="3" style="text-align:center">Kosong</td></tr>';
+  document.getElementById('rpt-income-total').textContent = formatRpResmi(tIn); document.getElementById('rpt-expense-total').textContent = formatRpResmi(tOut);
+  document.getElementById('rpt-saldo-awal').textContent = formatRpResmi(tIn - tOut); document.getElementById('rpt-bunga').textContent = formatRpResmi(b);
+  document.getElementById('rpt-subtotal').textContent = formatRpResmi(tIn - tOut + b); document.getElementById('rpt-pajak').textContent = formatRpResmi(p);
+  document.getElementById('rpt-adm-bank').textContent = formatRpResmi(ab); document.getElementById('rpt-adm-transfer').textContent = formatRpResmi(at);
+  document.getElementById('rpt-saldo-akhir').textContent = formatRpResmi(tIn - tOut + b - p - ab - at);
+  document.getElementById('rpt-summary-date-display').textContent = (m!=='all') ? `${lastD}.${String(months.indexOf(m)+1).padStart(2,'0')}.${String(y).slice(-2)}` : '';
+  const now = new Date(); document.getElementById('sig-date').textContent = `${now.getDate()} ${months[now.getMonth()]} ${now.getFullYear()}`;
+  document.getElementById('sig-ketua').textContent = cfg.ketua_name; document.getElementById('sig-bendahara').textContent = cfg.bendahara_name;
+}
+
+function downloadPDF() { const m = document.getElementById('report-month').value; const y = document.getElementById('report-year').value; html2pdf().set({ margin:0, filename:`Laporan_Persani_${m}_${y}.pdf`, image:{type:'jpeg',quality:0.98}, html2canvas:{scale:2,useCORS:true}, jsPDF:{unit:'mm',format:'a4',orientation:'landscape'} }).from(document.getElementById('report-content')).save(); }
+
+function populateFilterOptions() { const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']; const mS = document.getElementById('filter-month'); if(!mS) return; const old = mS.value; mS.innerHTML = '<option value="all">Semua Bulan</option>' + months.map((m,i) => `<option value="${i}">${m}</option>`).join(''); mS.value = old; }
+function drawPieChart(inc) { const canvas = document.getElementById('chart-pie'); if(!canvas) return; const ctx = canvas.getContext('2d'); ctx.clearRect(0,0,220,220); const cats = {}; inc.forEach(d => cats[d.category||'Lainnya'] = (cats[d.category||'Lainnya']||0)+d.amount); const entries = Object.entries(cats); if(!entries.length) return; const total = entries.reduce((s,[,v])=>s+v,0); const colors=['#3561f0','#10b981','#f59e0b','#e11d48','#8b5cf6']; let start = -Math.PI/2; entries.forEach(([cat, val], i) => { const angle = (val/total)*Math.PI*2; ctx.beginPath(); ctx.moveTo(110,100); ctx.arc(110,100,75,start,start+angle); ctx.fillStyle = colors[i%colors.length]; ctx.fill(); start+=angle; }); }
+function renderRecentTransactions() { const filtered = getFilteredData().sort((a,b)=>new Date(b.date)-new Date(a.date)); const pageData = filtered.slice((tablePage-1)*PAGE_SIZE, tablePage*PAGE_SIZE); const tbody = document.getElementById('recent-tbody'); if(!tbody) return; tbody.innerHTML = pageData.map(d=>`<tr class="table-row border-b border-slate-50"><td class="px-5 py-3 text-slate-600">${formatReportDate(d.date)}</td><td class="px-5 py-3 font-medium">${d.type==='income'?d.name:d.description}</td><td class="px-5 py-3"><span class="px-2 py-0.5 rounded text-xs ${d.type==='income'?'bg-blue-50 text-blue-600':'bg-rose-50 text-rose-500'}">${d.category}</span></td><td class="px-5 py-3 text-right font-mono ${d.type==='income'?'text-blue-600':'text-rose-500'}">${d.type==='income'?'+':'-'}Rp ${formatRpUI(d.amount)}</td><td class="px-5 py-3 text-center"><button onclick="openDeleteModal('${d.__backendId}')" class="text-slate-300 hover:text-rose-500"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td>`).join(''); lucide.createIcons(); }
+function openDeleteModal(id) { deleteTarget = id; document.getElementById('delete-modal').classList.remove('hidden'); }
+function closeDeleteModal() { document.getElementById('delete-modal').classList.add('hidden'); }
+async function confirmDelete() { await db.collection("transaksi_persani").doc(deleteTarget).delete(); closeDeleteModal(); showToast('Dihapus'); }
+function populateCategorySelects() { 
+    document.getElementById('inc-category').innerHTML = getIncomeCategories().map(opt => `<option value="${opt}">${opt}</option>`).join('');
+    document.getElementById('exp-category').innerHTML = getExpenseCategories().map(opt => `<option value="${opt}">${opt}</option>`).join(''); 
+}
+async function handleIncomeSubmit(e) { e.preventDefault(); await db.collection("transaksi_persani").add({ type:'income', date:document.getElementById('inc-date').value, name:document.getElementById('inc-name').value, category:document.getElementById('inc-category').value, month_payment:document.getElementById('inc-month').value, amount:parseInt(document.getElementById('inc-amount').value)||0, created_at:new Date().toISOString() }); showToast('Disimpan'); e.target.reset(); document.getElementById('inc-date').value = todayStr(); }
+async function handleExpenseSubmit(e) { e.preventDefault(); await db.collection("transaksi_persani").add({ type:'expense', date:document.getElementById('exp-date').value, description:document.getElementById('exp-desc').value, category:document.getElementById('exp-category').value, amount:parseInt(document.getElementById('exp-amount').value)||0, created_at:new Date().toISOString() }); showToast('Disimpan'); e.target.reset(); document.getElementById('exp-date').value = todayStr(); }
+function loadSettingsPage() { const cfg = window.elementSdk?.config || defaultConfig; document.getElementById('set-org-name').value = cfg.org_name; document.getElementById('set-ketua-name').value = cfg.ketua_name; document.getElementById('set-bendahara-name').value = cfg.bendahara_name; document.getElementById('set-income-categories').value = cfg.income_categories; document.getElementById('set-expense-categories').value = cfg.expense_categories; }
+function saveOrgSettings() { const payload = { org_name:document.getElementById('set-org-name').value, ketua_name:document.getElementById('set-ketua-name').value, bendahara_name:document.getElementById('set-bendahara-name').value }; window.elementSdk?.setConfig(payload); showToast('Disimpan'); }
+function saveCategorySettings() { window.elementSdk?.setConfig({ income_categories: document.getElementById('set-income-categories').value, expense_categories: document.getElementById('set-expense-categories').value }); showToast('Disimpan'); }
+
+const defaultConfig = { org_name:'Persani Kota Malang', ketua_name:'Firmansyah', bendahara_name:'Jeisen Christin', income_categories:'SPP,Sewa,Lainnya', expense_categories:'Transport,Listrik,Bonus Pelatih,Perlengkapan,Sewa Tempat,Lainnya' };
+if (!window.elementSdk) { window.elementSdk = { init: () => {}, setConfig: (c) => { window.elementSdk.config = {...window.elementSdk.config, ...c}; }, config: defaultConfig }; }
+function getIncomeCategories() { return (window.elementSdk.config.income_categories || 'SPP').split(',').map(c => c.trim()).filter(c => c); }
+window.elementSdk.init({ defaultConfig, onConfigChange: async () => {}, mapToCapabilities: () => ({ recolorables: [], fontEditable: { get: () => 'Plus Jakarta Sans', set: () => {} }, fontSizeable: { get: () => 14, set: () => {} } }), mapToEditPanelValues: () => new Map([['org_name', defaultConfig.org_name]]) });
+  </script>
+ </body>
+</html>
