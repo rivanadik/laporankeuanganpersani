@@ -485,15 +485,20 @@ window.dataSdk = {
       console.error("Error Firebase (Transaksi): ", error); showToast('Koneksi database transaksi gagal.', 'error');
     });
 
-    db.collection("bank_persani").onSnapshot((snapshot) => {
-      bankData = {};
-      snapshot.forEach((doc) => { bankData[doc.id] = doc.data(); });
-      if (currentPage === 'dashboard') renderDashboard();
-      if (currentPage === 'report') generateReport();
-      if (currentPage === 'bank') loadBankForm();
-    }, (error) => {
-      console.error("Error Firebase (Bank): ", error); showToast('Koneksi database bank gagal.', 'error');
-    });
+    // Pastikan bagian ini ada di dalam window.dataSdk.init
+db.collection("bank_persani").onSnapshot((snapshot) => {
+  bankData = {}; // Kosongkan dulu
+  snapshot.forEach((doc) => { 
+    bankData[doc.id] = doc.data(); // Isi dengan data dari Firestore
+  });
+  
+  // Refresh tampilan setiap ada perubahan data bank
+  if (currentPage === 'dashboard') renderDashboard();
+  if (currentPage === 'report') generateReport();
+  if (currentPage === 'bank') loadBankForm();
+}, (error) => {
+  console.error("Error Bank: ", error);
+});
 
     return { isOk: true };
   },
@@ -873,83 +878,144 @@ async function handleBankSubmit(e) {
 }
 
 function generateReport() {
-  const month = document.getElementById('report-month').value; 
+  const month = document.getElementById('report-month').value;
   const year = document.getElementById('report-year').value;
+  const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+  // 1. DATA DASAR & KONFIGURASI
+  const selectedMonthIdx = months.indexOf(month);
+  const selectedYear = parseInt(year);
   const cfg = window.elementSdk ? window.elementSdk.config : defaultConfig;
-  let filtered = allData; 
-  const months = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-  
-  // 1. Filter Data Transaksi Manual
-  if (month !== 'all' && year !== 'all') {
-    filtered = allData.filter(d => { 
-      if (!d.date) return false; 
-      const dt = new Date(d.date); 
-      return (months[dt.getMonth()] === month && dt.getFullYear() === parseInt(year)); 
-    });
-  }
 
-  const incomes = filtered.filter(d => d.type === 'income');
-  const expenses = filtered.filter(d => d.type === 'expense');
+  // 2. HITUNG SALDO AWAL (Seluruh saldo sebelum bulan terpilih)
+  let saldoAwalBulan = 0;
   
-  const totalInManual = incomes.reduce((s, d) => s + (d.amount || 0), 0);
+  // Hitung dari transaksi manual lama
+  allData.forEach(d => {
+    if (!d.date) return;
+    const dt = new Date(d.date);
+    const dMonth = dt.getMonth();
+    const dYear = dt.getFullYear();
+
+    if (dYear < selectedYear || (dYear === selectedYear && dMonth < selectedMonthIdx)) {
+      if (d.type === 'income') saldoAwalBulan += (d.amount || 0);
+      else saldoAwalBulan -= (d.amount || 0);
+    }
+  });
+
+  // Hitung dari data bank lama
+  Object.keys(bankData).forEach(id => {
+    const [bYear, bMonthName] = id.split('-');
+    const bMonthIdx = months.indexOf(bMonthName);
+    const bYearInt = parseInt(bYear);
+
+    if (bYearInt < selectedYear || (bYearInt === selectedYear && bMonthIdx < selectedMonthIdx)) {
+      const b = bankData[id];
+      saldoAwalBulan += (b.bunga || 0);
+      saldoAwalBulan -= (b.pajak || 0);
+      saldoAwalBulan -= (b.admBank || 0);
+      saldoAwalBulan -= (b.admTransfer || 0);
+    }
+  });
+
+  // 3. FILTER DATA BULAN INI (Hanya manual)
+  let filtered = allData.filter(d => {
+    if (!d.date) return false;
+    const dt = new Date(d.date);
+    return (months[dt.getMonth()] === month && dt.getFullYear() === selectedYear);
+  });
+
+  let incomes = filtered.filter(d => d.type === 'income').sort((a, b) => new Date(a.date) - new Date(b.date));
+  let expenses = filtered.filter(d => d.type === 'expense').sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  // 4. RENDER TABEL PENERIMAAN (Baris pertama: Saldo Bulan Lalu)
+  const itb = document.getElementById('rpt-income-tbody');
+  const namaBulanLalu = selectedMonthIdx === 0 ? months[11] : months[selectedMonthIdx - 1];
+  const tahunSingkat = String(selectedYear).slice(-2);
+  
+  let htmlIn = `<tr>
+      <td style="text-align: center;">01-${month.slice(0, 3)}-${tahunSingkat}</td>
+      <td style="font-weight: 500;">Saldo ${namaBulanLalu}'${tahunSingkat}</td>
+      <td style="text-align: right;">${formatRpResmi(saldoAwalBulan)}</td>
+    </tr>`;
+
+  incomes.forEach(d => {
+    htmlIn += `<tr>
+      <td style="text-align: center;">${formatReportDate(d.date)}</td>
+      <td>${d.name || '-'}</td>
+      <td style="text-align: right;">${formatRpResmi(d.amount)}</td>
+    </tr>`;
+  });
+  itb.innerHTML = htmlIn;
+
+  // 5. RENDER TABEL PENGELUARAN
+  const etb = document.getElementById('rpt-expense-tbody');
+  etb.innerHTML = expenses.map(d => `
+    <tr>
+      <td style="text-align: center;">${formatReportDate(d.date)}</td>
+      <td>${d.description || '-'}</td>
+      <td style="text-align: right;">${formatRpResmi(d.amount)}</td>
+    </tr>`).join('');
+
+  // 6. HITUNG TOTAL & RINCIAN BANK BULAN INI
+  const totalInManual = incomes.reduce((s, d) => s + (d.amount || 0), 0) + saldoAwalBulan;
   const totalOutManual = expenses.reduce((s, d) => s + (d.amount || 0), 0);
-
-  // 2. Ambil Data Bank
-  let bunga = 0, pajak = 0, admBank = 0, admTransfer = 0;
-  if (month !== 'all' && year !== 'all') {
-      const docId = `${year}-${month}`;
-      if (bankData && bankData[docId]) {
-          bunga = bankData[docId].bunga || 0; 
-          pajak = bankData[docId].pajak || 0;
-          admBank = bankData[docId].admBank || 0; 
-          admTransfer = bankData[docId].admTransfer || 0;
-      }
-  }
-
-  // 3. LOGIKA SINGKRONISASI:
-  // Total Penerimaan = Manual + Bunga
-  // Total Pengeluaran = Manual + Pajak + Semua Admin
-  const totalPenerimaanFinal = totalInManual + bunga;
-  const totalPengeluaranFinal = totalOutManual + pajak + admBank + admTransfer;
-  const saldoAkhir = totalPenerimaanFinal - totalPengeluaranFinal;
-
-  // 4. Update Tampilan Judul Periode (Perbaikan Bug "Semua Periode")
-  let periodText = '';
-  if (month !== 'all' && year !== 'all') {
-      const lastDay = new Date(year, months.indexOf(month) + 1, 0).getDate();
-      periodText = `01 - ${lastDay} ${month.toUpperCase()} ${year}`;
-  } else {
-      periodText = year !== 'all' ? `TAHUN ${year}` : 'SEMUA PERIODE';
-  }
-  document.getElementById('report-period-display').textContent = periodText;
-
-  // 5. Render Tabel (Gunakan totalInManual & totalOutManual untuk isi tabel)
-  // ... (bagian render tbody tetap sama seperti kode kamu sebelumnya) ...
-
-  // 6. Update TOTAL DI TABEL ATAS (Ini yang bikin singkron)
-  document.getElementById('rpt-income-total').textContent = formatRpResmi(totalPenerimaanFinal);
-  document.getElementById('rpt-expense-total').textContent = formatRpResmi(totalPengeluaranFinal);
   
-  // 7. Update RINCIAN BANK DI BAWAH
-  document.getElementById('rpt-saldo-awal').textContent = formatRpResmi(totalInManual - totalOutManual);
-  document.getElementById('rpt-bunga').textContent = formatRpResmi(bunga);
-  document.getElementById('rpt-subtotal').textContent = formatRpResmi((totalInManual - totalOutManual) + bunga);
-  document.getElementById('rpt-pajak').textContent = formatRpResmi(pajak);
-  document.getElementById('rpt-adm-bank').textContent = formatRpResmi(admBank);
-  document.getElementById('rpt-adm-transfer').textContent = formatRpResmi(admTransfer);
-  document.getElementById('rpt-saldo-akhir').textContent = formatRpResmi(saldoAkhir);
+  const docId = `${year}-${month}`;
+  const bCur = bankData[docId] || { bunga: 0, pajak: 0, admBank: 0, admTransfer: 0 };
+  
+  const saldoBelumPajak = totalInManual - totalOutManual;
+  const subtotalBunga = saldoBelumPajak + (bCur.bunga || 0);
+  const saldoKasAkhir = subtotalBunga - (bCur.pajak || 0) - (bCur.admBank || 0) - (bCur.admTransfer || 0);
+
+  // 7. UPDATE SEMUA TAMPILAN DOM
+  document.getElementById('rpt-income-total').textContent = formatRpResmi(totalInManual);
+  document.getElementById('rpt-expense-total').textContent = formatRpResmi(totalOutManual);
+  
+  document.getElementById('rpt-saldo-awal').textContent = formatRpResmi(saldoBelumPajak);
+  document.getElementById('rpt-bunga').textContent = formatRpResmi(bCur.bunga || 0);
+  document.getElementById('rpt-subtotal').textContent = formatRpResmi(subtotalBunga);
+  document.getElementById('rpt-pajak').textContent = formatRpResmi(bCur.pajak || 0);
+  document.getElementById('rpt-adm-bank').textContent = formatRpResmi(bCur.admBank || 0);
+  document.getElementById('rpt-adm-transfer').textContent = formatRpResmi(bCur.admTransfer || 0);
+  document.getElementById('rpt-saldo-akhir').textContent = formatRpResmi(saldoKasAkhir);
+
+  // Update Judul Periode & Tanggal Rincian
+  const lastDay = new Date(selectedYear, selectedMonthIdx + 1, 0).getDate();
+  document.getElementById('report-period-display').textContent = `01 - ${lastDay} ${month.toUpperCase()} ${year}`;
+  document.getElementById('rpt-summary-date-display').textContent = `${lastDay}.${String(selectedMonthIdx + 1).padStart(2, '0')}.${tahunSingkat}`;
+
+  // --- BAGIAN TANDA TANGAN ---
+  const tanggalLengkap = `${lastDay} ${month} ${selectedYear}`;
+  
+  const elDate = document.getElementById('sig-date');
+  if (elDate) elDate.textContent = tanggalLengkap;
+
+  const elKetua = document.getElementById('sig-ketua');
+  if (elKetua) elKetua.textContent = cfg.ketua_name || defaultConfig.ketua_name;
+
+  const elBendahara = document.getElementById('sig-bendahara');
+  if (elBendahara) elBendahara.textContent = cfg.bendahara_name || defaultConfig.bendahara_name;
 }
 
 function downloadPDF() {
   const element = document.getElementById('report-content'); 
   const btn = document.getElementById('btn-download-pdf');
+  
+  // 1. Ambil bulan dan tahun yang sedang dipilih untuk nama file
+  const month = document.getElementById('report-month').value;
+  const year = document.getElementById('report-year').value;
+  
+  // 2. Buat nama file otomatis (Contoh: Laporan_Keuangan_Persani_April_2026.pdf)
+  const autoFileName = `Laporan_Keuangan_Persani_${month}_${year}.pdf`;
+
   const originalText = btn.innerHTML; 
   btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Memproses...'; 
   lucide.createIcons();
   
   const opt = { 
     margin: 0, 
-    filename: 'Laporan_Keuangan_Persani.pdf', 
+    filename: autoFileName, // MENGGUNAKAN NAMA FILE OTOMATIS
     image: { type: 'jpeg', quality: 0.98 }, 
     html2canvas: { scale: 2, useCORS: true }, 
     jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' } 
