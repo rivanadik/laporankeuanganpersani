@@ -425,16 +425,16 @@ let isAppInitialized = false;
 // ==========================================
 auth.onAuthStateChanged(async (user) => {
   if (user) {
-    // Jika berhasil login, tampilkan aplikasi
     document.getElementById('login-page').classList.add('hidden');
     document.getElementById('app').classList.remove('hidden');
     
-    // Inisialisasi Data SDK HANYA setelah login berhasil
     if (!isAppInitialized) {
        const result = await window.dataSdk.init(dataHandler); 
        if (!result.isOk) { console.error('Data SDK init failed'); }
-       document.getElementById('inc-date').value = todayStr(); 
-       document.getElementById('exp-date').value = todayStr(); 
+       
+       // SET TANGGAL HARI INI
+       if(document.getElementById('inc-date')) document.getElementById('inc-date').value = todayStr(); 
+       if(document.getElementById('exp-date')) document.getElementById('exp-date').value = todayStr(); 
        
        const currMonth = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'][new Date().getMonth()];
        if(document.getElementById('bank-month')) document.getElementById('bank-month').value = currMonth;
@@ -444,7 +444,6 @@ auth.onAuthStateChanged(async (user) => {
        isAppInitialized = true;
     }
   } else {
-    // Jika tidak ada sesi (belum login / habis logout), tampilkan halaman login
     document.getElementById('login-page').classList.remove('hidden');
     document.getElementById('app').classList.add('hidden');
   }
@@ -548,7 +547,14 @@ function formatReportDate(d) {
   if (!d) return '-'; const dt = new Date(d); const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
   return `${String(dt.getDate()).padStart(2, '0')}-${months[dt.getMonth()]}-${String(dt.getFullYear()).slice(-2)}`;
 }
-function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+function todayStr() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`; // Format pasti: YYYY-MM-DD
+}
 
 function showToast(msg, type='success') {
   const c = document.getElementById('toast-container'); const t = document.createElement('div');
@@ -557,17 +563,47 @@ function showToast(msg, type='success') {
 }
 
 function navigate(page) {
-  currentPage = page; document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
-  const el = document.getElementById('page-' + page); if (el) { el.classList.remove('hidden'); el.classList.add('fade-in'); }
-  document.querySelectorAll('[data-nav]').forEach(btn => { btn.classList.toggle('active', btn.dataset.nav === page); btn.classList.toggle('text-white/90', btn.dataset.nav === page); btn.classList.toggle('text-white/70', btn.dataset.nav !== page); });
+  currentPage = page;
   
-  if (page === 'income' || page === 'expense') populateCategorySelects(); 
+  // 1. Sembunyikan semua section halaman (class .page)
+  document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+  
+  // 2. Tampilkan halaman yang dituju
+  const el = document.getElementById('page-' + page);
+  if (el) {
+    el.classList.remove('hidden');
+    el.classList.add('fade-in');
+  }
+
+  // 3. LOGIKA TANGGAL OTOMATIS (Setiap kali menu diklik)
+  if (page === 'income') {
+    const incDate = document.getElementById('inc-date');
+    if (incDate) incDate.value = todayStr(); // Isi otomatis tanggal hari ini
+    populateCategorySelects();
+  }
+  if (page === 'expense') {
+    const expDate = document.getElementById('exp-date');
+    if (expDate) expDate.value = todayStr(); // Isi otomatis tanggal hari ini
+    populateCategorySelects();
+  }
+
+  // 4. Update status visual tombol di Sidebar
+  document.querySelectorAll('[data-nav]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.nav === page);
+    btn.classList.toggle('text-white/90', btn.dataset.nav === page);
+    btn.classList.toggle('text-white/70', btn.dataset.nav !== page);
+  });
+  
+  // 5. Inisialisasi data sesuai halaman yang dibuka
   if (page === 'dashboard') renderDashboard();
   if (page === 'bank') { populateYears(); loadBankForm(); }
   if (page === 'report') { populateYears(); generateReport(); } 
   if (page === 'settings') loadSettingsPage(); 
+  
+  // Tutup menu mobile jika sedang terbuka
   toggleMobileMenu(true);
 }
+
 function toggleMobileMenu(forceClose) {
   const sidebar = document.getElementById('sidebar'); const overlay = document.getElementById('mobile-overlay');
   if (forceClose || sidebar.classList.contains('open')) { sidebar.classList.remove('open'); overlay.classList.add('hidden'); } else { sidebar.classList.add('open'); overlay.classList.remove('hidden'); }
@@ -811,22 +847,94 @@ function populateCategorySelects() {
 }
 
 async function handleIncomeSubmit(e) {
+  // 1. Mencegah halaman refresh saat form dikirim
   e.preventDefault();
+
+  const btn = document.getElementById('inc-submit-btn');
+  const originalText = btn.innerHTML;
+
   try {
-    const btn = document.getElementById('inc-submit-btn'); btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Menyimpan...'; btn.disabled = true;
-    const result = await window.dataSdk.create({ type: 'income', date: document.getElementById('inc-date').value || todayStr(), name: document.getElementById('inc-name').value, category: document.getElementById('inc-category').value || 'SPP', month_payment: document.getElementById('inc-month').value, description: '', amount: parseInt(document.getElementById('inc-amount').value) || 0, created_at: new Date().toISOString() });
-    btn.innerHTML = '<i data-lucide="plus" class="w-4 h-4"></i> Simpan Pemasukan'; btn.disabled = false; lucide.createIcons();
-    if (result.isOk) { showToast('Pemasukan disimpan!'); document.getElementById('income-form').reset(); document.getElementById('inc-date').value = todayStr(); } else showToast('Gagal menyimpan', 'error');
-  } catch(err) { console.error(err); showToast('Terjadi kesalahan', 'error'); }
+    // 2. Memberikan feedback visual (Loading State)
+    btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Menyimpan...';
+    btn.disabled = true;
+    lucide.createIcons(); // Refresh icon loading
+
+    // 3. Menyiapkan data untuk dikirim ke Database
+    const incomeData = {
+      type: 'income',
+      date: document.getElementById('inc-date').value || todayStr(),
+      name: document.getElementById('inc-name').value,
+      category: document.getElementById('inc-category').value || 'SPP',
+      month_payment: document.getElementById('inc-month').value,
+      description: '', // Kosong karena pemasukan biasanya fokus di Nama/Uraian
+      amount: parseInt(document.getElementById('inc-amount').value) || 0,
+      created_at: new Date().toISOString() // Timestamp untuk audit log
+    };
+
+    // 4. Mengirim data via SDK yang sudah terhubung ke Firebase
+    const result = await window.dataSdk.create(incomeData);
+
+    // 5. Menangani respon setelah proses simpan
+    if (result.isOk) {
+      showToast('Pemasukan Berhasil Disimpan!');
+      
+      // Reset form agar bersih kembali
+      document.getElementById('income-form').reset();
+      
+      // KHUSUS: Isi kembali tanggal dengan hari ini (biar tidak kosong setelah reset)
+      document.getElementById('inc-date').value = todayStr();
+      
+      // Jika sedang di halaman dashboard, refresh angkanya
+      if (typeof renderDashboard === 'function') renderDashboard();
+    } else {
+      showToast('Gagal menyimpan ke database', 'error');
+    }
+
+  } catch (err) {
+    console.error("Error pada handleIncomeSubmit:", err);
+    showToast('Terjadi kesalahan sistem', 'error');
+  } finally {
+    // 6. Mengembalikan tombol ke keadaan semula
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+    lucide.createIcons();
+  }
 }
+
 async function handleExpenseSubmit(e) {
   e.preventDefault();
   try {
-    const btn = document.getElementById('exp-submit-btn'); btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Menyimpan...'; btn.disabled = true;
-    const result = await window.dataSdk.create({ type: 'expense', date: document.getElementById('exp-date').value || todayStr(), name: '', category: document.getElementById('exp-category').value || 'Lainnya', month_payment: '', description: document.getElementById('exp-desc').value || '-', amount: parseInt(document.getElementById('exp-amount').value) || 0, created_at: new Date().toISOString() });
-    btn.innerHTML = '<i data-lucide="minus" class="w-4 h-4"></i> Simpan Pengeluaran'; btn.disabled = false; lucide.createIcons();
-    if (result.isOk) { showToast('Pengeluaran disimpan!'); document.getElementById('expense-form').reset(); document.getElementById('exp-date').value = todayStr(); } else showToast('Gagal menyimpan', 'error');
-  } catch(err) { console.error(err); showToast('Terjadi kesalahan', 'error'); }
+    const btn = document.getElementById('exp-submit-btn'); 
+    btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 animate-spin"></i> Menyimpan...'; 
+    btn.disabled = true;
+
+    const result = await window.dataSdk.create({ 
+      type: 'expense', 
+      date: document.getElementById('exp-date').value || todayStr(), 
+      name: '', 
+      category: document.getElementById('exp-category').value || 'Lainnya', 
+      month_payment: '', 
+      description: document.getElementById('exp-desc').value || '-', 
+      amount: parseInt(document.getElementById('exp-amount').value) || 0, 
+      created_at: new Date().toISOString() 
+    });
+
+    btn.innerHTML = '<i data-lucide="minus" class="w-4 h-4"></i> Simpan Pengeluaran'; 
+    btn.disabled = false; 
+    lucide.createIcons();
+
+    if (result.isOk) { 
+      showToast('Pengeluaran disimpan!'); 
+      document.getElementById('expense-form').reset(); 
+      // TAMBAHKAN BARIS INI:
+      document.getElementById('exp-date').value = todayStr(); 
+    } else {
+      showToast('Gagal menyimpan', 'error');
+    }
+  } catch(err) { 
+    console.error(err); 
+    showToast('Terjadi kesalahan', 'error'); 
+  }
 }
 
 function loadBankForm() {
