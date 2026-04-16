@@ -112,6 +112,9 @@
      <button onclick="navigate('bank')" data-nav="bank" class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70"> <i data-lucide="landmark" class="w-[18px] h-[18px]"></i> Rincian Bank </button> 
      <button onclick="navigate('report')" data-nav="report" class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70"> <i data-lucide="file-text" class="w-[18px] h-[18px]"></i> Laporan </button> 
      <button onclick="navigate('settings')" data-nav="settings" class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70"> <i data-lucide="settings" class="w-[18px] h-[18px]"></i> Pengaturan </button>
+    <button onclick="navigate('monitoring')" data-nav="monitoring" class="sidebar-link w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-white/70"> 
+  <i data-lucide="clipboard-check" class="w-[18px] h-[18px]"></i> Monitoring SPP 
+</button>
     </nav>
     <div class="p-4 border-t border-white/10 flex items-center justify-between">
      <div class="flex items-center gap-3 px-3 py-2">
@@ -377,6 +380,31 @@
      </div>
     </section>
 
+    <section id="page-monitoring" class="page fade-in hidden">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div>
+      <h2 class="text-2xl font-bold text-slate-900">Monitoring Iuran Siswa</h2>
+      <p class="text-sm text-slate-500 mt-1">Status pembayaran SPP berdasarkan tahun</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <label class="text-sm font-medium text-slate-600">Tahun:</label>
+      <select id="monitoring-year" onchange="renderMonitoring()" class="text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-navy-400">
+        </select>
+    </div>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 border-b border-slate-100">
+        <tr id="monitoring-thead">
+          <th class="px-4 py-3 text-left bg-slate-100 sticky left-0 z-20 border-r shadow-sm">Nama Siswa</th>
+        </tr>
+      </thead>
+      <tbody id="monitoring-tbody"></tbody>
+    </table>
+  </div>
+</section>
+
    </main>
    
    <div id="delete-modal" class="fixed inset-0 bg-black/40 z-[90] hidden flex items-center justify-center p-4">
@@ -575,32 +603,36 @@ function navigate(page) {
     el.classList.add('fade-in');
   }
 
-  // 3. LOGIKA TANGGAL OTOMATIS (Setiap kali menu diklik)
+  // 3. Logika khusus per halaman (Setiap kali menu diklik)
   if (page === 'income') {
     const incDate = document.getElementById('inc-date');
-    if (incDate) incDate.value = todayStr(); // Isi otomatis tanggal hari ini
+    if (incDate) incDate.value = todayStr(); 
     populateCategorySelects();
   }
   if (page === 'expense') {
     const expDate = document.getElementById('exp-date');
-    if (expDate) expDate.value = todayStr(); // Isi otomatis tanggal hari ini
+    if (expDate) expDate.value = todayStr(); 
     populateCategorySelects();
   }
 
-  // 4. Update status visual tombol di Sidebar
+  // 4. Update status visual tombol di Sidebar (Highlight menu aktif)
   document.querySelectorAll('[data-nav]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.nav === page);
-    btn.classList.toggle('text-white/90', btn.dataset.nav === page);
-    btn.classList.toggle('text-white/70', btn.dataset.nav !== page);
+    const isActive = btn.getAttribute('onclick').includes(`'${page}'`);
+    btn.classList.toggle('active', isActive);
+    btn.classList.toggle('text-white/90', isActive);
+    btn.classList.toggle('text-white/70', !isActive);
   });
   
-  // 5. Inisialisasi data sesuai halaman yang dibuka
+  // 5. Inisialisasi/Refresh data sesuai halaman yang dibuka
   if (page === 'dashboard') renderDashboard();
   if (page === 'bank') { populateYears(); loadBankForm(); }
   if (page === 'report') { populateYears(); generateReport(); } 
   if (page === 'settings') loadSettingsPage(); 
   
-  // Tutup menu mobile jika sedang terbuka
+  // LOGIKA MONITORING: Panggil fungsi render jika halaman monitoring dibuka
+  if (page === 'monitoring') renderMonitoring(); 
+  
+  // 6. Tutup menu mobile jika sedang terbuka
   toggleMobileMenu(true);
 }
 
@@ -746,38 +778,28 @@ function populateFilterOptions() {
 }
 
 function populateYears() {
-  const yearSet = new Set();
-  
-  // 1. Ambil tahun dari data transaksi yang sudah ada
-  allData.forEach(d => { 
-    if (d.date) yearSet.add(new Date(d.date).getFullYear()); 
-  });
+    const yearSet = new Set();
+    allData.forEach(d => { if (d.date) yearSet.add(new Date(d.date).getFullYear()); });
 
-  // 2. Tambahkan rentang tahun otomatis (misal: 2 tahun lalu sampai 5 tahun ke depan)
-  const currentY = new Date().getFullYear();
-  for (let i = currentY - 2; i <= currentY + 5; i++) {
-    yearSet.add(i);
-  }
+    const currentY = new Date().getFullYear();
+    for (let i = currentY - 2; i <= currentY + 3; i++) { yearSet.add(i); }
+    const years = [...yearSet].sort((a, b) => b - a);
 
-  const years = [...yearSet].sort((a, b) => b - a); // Urutkan dari yang terbaru (descending)
+    // Dropdown Laporan
+    const rptY = document.getElementById('report-year');
+    if(rptY) rptY.innerHTML = '<option value="all">Semua Tahun</option>' + years.map(y => `<option value="${y}">${y}</option>`).join('');
+    
+    // Dropdown Bank
+    const bnkY = document.getElementById('bank-year');
+    if(bnkY) bnkY.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
 
-  // Isi dropdown di halaman Laporan
-  const rptY = document.getElementById('report-year');
-  if(rptY) {
-      const rptVal = rptY.value;
-      rptY.innerHTML = '<option value="all">Semua Tahun</option>' + 
-                       years.map(y => `<option value="${y}">${y}</option>`).join('');
-      if(rptVal) rptY.value = rptVal;
-  }
-  
-  // Isi dropdown di halaman Bank
-  const bnkY = document.getElementById('bank-year');
-  if(bnkY) {
-      const bnkVal = bnkY.value;
-      bnkY.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
-      // Default ke tahun sekarang jika belum ada pilihan
-      if(!bnkVal || bnkVal === "all") bnkY.value = currentY; else bnkY.value = bnkVal;
-  }
+    // DROPDOWN MONITORING (Tambahkan ini)
+    const monY = document.getElementById('monitoring-year');
+    if(monY) {
+        const currentVal = monY.value;
+        monY.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+        monY.value = currentVal || currentY; // Default ke tahun sekarang
+    }
 }
 
 function drawBarChart(data) {
@@ -1149,6 +1171,65 @@ if (window.elementSdk) {
   window.elementSdk.init({ defaultConfig, onConfigChange: async (cfg) => applyConfig(cfg), mapToCapabilities: (cfg) => ({ recolorables: [], borderables: [], fontEditable: { get: () => cfg.font_family || 'Plus Jakarta Sans', set: v => {} }, fontSizeable: { get: () => cfg.font_size || 14, set: v => {} } }), mapToEditPanelValues: (cfg) => new Map([['org_name', cfg.org_name || defaultConfig.org_name]]) });
 } else { applyConfig(defaultConfig); }
 
+function renderMonitoring() {
+    const theadRow = document.getElementById('monitoring-thead');
+    const tbody = document.getElementById('monitoring-tbody');
+    const yearSelect = document.getElementById('monitoring-year');
+    const selectedYear = parseInt(yearSelect.value) || new Date().getFullYear();
+    const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+    
+    // 1. Generate Header
+    theadRow.innerHTML = `
+        <th class="px-4 py-3 text-left bg-slate-100 sticky left-0 z-20 border-r shadow-sm">Nama Siswa</th>
+        ${months.map(m => `<th class="px-4 py-3 text-center font-semibold text-slate-600 min-w-[80px]">${m.slice(0,3)}</th>`).join('')}
+    `;
+
+    // 2. Filter data: Hanya kategori SPP DAN Tahun yang sesuai
+    const sppData = allData.filter(d => {
+        if (!d.date || d.category !== 'SPP') return false;
+        const dt = new Date(d.date);
+        return dt.getFullYear() === selectedYear;
+    });
+    
+    // 3. Ambil daftar unik nama siswa (diurutkan)
+    const students = [...new Set(sppData.map(d => d.name))].sort();
+    
+    tbody.innerHTML = '';
+    
+    if (students.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="13" class="px-5 py-10 text-center text-slate-400 text-sm">Belum ada data pembayaran SPP di tahun ${selectedYear}</td></tr>`;
+        return;
+    }
+
+    students.forEach(student => {
+        let row = `<tr class="border-b border-slate-50 hover:bg-blue-50/30 transition-colors">
+            <td class="px-4 py-3 font-medium text-slate-700 sticky left-0 bg-white border-r shadow-sm z-10">${student}</td>`;
+        
+        months.forEach(month => {
+            // Cek pembayaran berdasarkan nama siswa dan bulan_pembayaran
+            const detailBayar = sppData.find(d => d.name === student && d.month_payment === month);
+            
+            if (detailBayar) {
+                row += `
+                <td class="px-4 py-3 text-center border-r border-slate-50" title="Bayar Rp ${formatRpUI(detailBayar.amount)} pada ${formatReportDate(detailBayar.date)}">
+                    <div class="flex items-center justify-center">
+                        <span class="w-6 h-6 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-[10px]">✅</span>
+                    </div>
+                </td>`;
+            } else {
+                row += `
+                <td class="px-4 py-3 text-center border-r border-slate-50">
+                    <span class="text-[10px] font-bold text-rose-300">---</span>
+                </td>`;
+            }
+        });
+        
+        row += `</tr>`;
+        tbody.innerHTML += row;
+    });
+
+    if(typeof lucide !== 'undefined') lucide.createIcons();
+}
   </script>
  </body>
 </html>
